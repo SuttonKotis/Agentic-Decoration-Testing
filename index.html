@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; style-src &#x27;self&#x27;; img-src &#x27;self&#x27; blob: data:; connect-src https://api.openai.com; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; upgrade-insecure-requests">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Decoration Preview — Embroidery</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the form</a>
+
+  <header class="page-header">
+    <div class="page-header__titles">
+      <h1>Decoration Preview</h1>
+      <p class="page-header__subtitle">Turn a product mockup into an embroidery preview for design review.</p>
+    </div>
+    <p class="badge" id="phase-badge">Phase 1 · Embroidery</p>
+  </header>
+
+  <main id="main">
+    <!-- Step 1 and 2: who is testing, and the key they were assigned. -->
+    <section class="card" id="connect-card" aria-labelledby="connect-heading">
+      <h2 id="connect-heading"><span class="step">1</span> Connect</h2>
+
+      <div class="field">
+        <label for="tester-name">Your name</label>
+        <input type="text" id="tester-name" name="tester-name" autocomplete="off"
+               spellcheck="false" maxlength="80"
+               aria-describedby="tester-name-help tester-name-error">
+        <p class="help" id="tester-name-help">Used to label the results you send to the sponsor. It is not sent to OpenAI.</p>
+        <p class="error" id="tester-name-error" role="alert"></p>
+      </div>
+
+      <div class="field">
+        <label for="api-key">Your assigned OpenAI API key</label>
+        <input type="password" id="api-key" name="api-key" autocomplete="off"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               aria-describedby="api-key-help api-key-error">
+        <p class="help" id="api-key-help">
+          Held in this page only, for as long as you stay connected. It is sent to OpenAI over HTTPS
+          to authenticate your request, and is never put in the prompt, a link, or a saved file.
+        </p>
+        <p class="error" id="api-key-error" role="alert"></p>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="connect-button" class="primary">Connect</button>
+        <button type="button" id="disconnect-button" class="secondary" hidden>Disconnect and clear</button>
+      </div>
+
+      <p class="status" id="connection-status" role="status">Not connected.</p>
+    </section>
+
+    <!-- Step 3: the mockup. -->
+    <section class="card" id="source-card" aria-labelledby="source-heading">
+      <h2 id="source-heading"><span class="step">2</span> Product mockup</h2>
+
+      <div class="field">
+        <label for="source-file">Image containing the product and its artwork</label>
+        <input type="file" id="source-file" name="source-file"
+               aria-describedby="source-file-help source-file-error">
+        <p class="help" id="source-file-help">One PNG, JPEG or WebP image, up to 20 MB.</p>
+        <p class="error" id="source-file-error" role="alert"></p>
+        <p class="notice" id="source-file-advice" hidden></p>
+      </div>
+
+      <figure class="preview preview--source" id="source-preview" hidden>
+        <img id="source-image" alt="The product mockup you selected">
+        <figcaption id="source-details"></figcaption>
+      </figure>
+    </section>
+
+    <!-- Step 4: fixed treatment plus the approved optional notes. -->
+    <section class="card" id="treatment-card" aria-labelledby="treatment-heading">
+      <h2 id="treatment-heading"><span class="step">3</span> Treatment</h2>
+
+      <p class="fixed-treatment">
+        <strong>Embroidery</strong>
+        <span class="help">Fixed for this phase. Choosing between decoration methods arrives in phase 2.</span>
+      </p>
+
+      <div class="field">
+        <label for="notes">Additional instructions <span class="optional">(optional)</span></label>
+        <textarea id="notes" name="notes" rows="3" maxlength="500" spellcheck="true"
+                  placeholder="For example: keep the small lettering readable."
+                  aria-describedby="notes-help notes-count notes-error"></textarea>
+        <p class="help" id="notes-help">
+          Added to the managed embroidery instruction as clearly labelled guidance. Leave it blank to
+          use the managed instruction on its own.
+        </p>
+        <p class="counter" id="notes-count">500 characters remaining</p>
+        <p class="error" id="notes-error" role="alert"></p>
+      </div>
+
+      <details class="disclosure">
+        <summary>Read the managed embroidery instruction</summary>
+        <p class="help">
+          The firm writes and maintains this text. In a page like this one it is visible to you and is
+          not something the page can enforce.
+        </p>
+        <pre class="prompt-text" id="managed-prompt"></pre>
+      </details>
+    </section>
+
+    <!-- Step 5: the single request. -->
+    <section class="card" id="generate-card" aria-labelledby="generate-heading">
+      <h2 id="generate-heading"><span class="step">4</span> Generate</h2>
+
+      <dl class="request-summary" id="request-summary">
+        <div><dt>Model</dt><dd id="summary-model">—</dd></div>
+        <div><dt>Output</dt><dd id="summary-output">—</dd></div>
+        <div><dt>Instruction</dt><dd id="summary-prompt">—</dd></div>
+      </dl>
+
+      <div class="actions">
+        <button type="button" id="generate-button" class="primary" disabled>Generate embroidery preview</button>
+        <span class="pending" id="pending-indicator" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="pending-text">Working…</span>
+        </span>
+      </div>
+
+      <p class="help">
+        One request per press. This page never retries on its own, because each attempt is a separate
+        charge on your key.
+      </p>
+
+      <div class="message message--error" id="error-panel" role="alert" hidden>
+        <h3 id="error-title"></h3>
+        <p id="error-message"></p>
+        <p class="message__meta" id="error-meta" hidden></p>
+      </div>
+    </section>
+
+    <!-- Result. -->
+    <section class="card" id="result-card" aria-labelledby="result-heading" hidden>
+      <h2 id="result-heading">Result</h2>
+
+      <div class="comparison">
+        <figure class="preview">
+          <img id="compare-source" alt="The mockup you supplied">
+          <figcaption>Supplied mockup</figcaption>
+        </figure>
+        <figure class="preview">
+          <img id="compare-result" alt="The generated embroidery preview">
+          <figcaption>Embroidery preview</figcaption>
+        </figure>
+      </div>
+
+      <div class="actions">
+        <a id="download-link" class="primary as-button" download>Download the preview</a>
+        <span class="help" id="download-note">Keep it: the image exists only in this page until you save it.</span>
+      </div>
+
+      <dl class="request-summary" id="result-details">
+        <div><dt>Mockup</dt><dd id="result-source">—</dd></div>
+        <div><dt>File</dt><dd id="result-filename">—</dd></div>
+        <div><dt>Generated</dt><dd id="result-generated">—</dd></div>
+        <div><dt>Settings</dt><dd id="result-settings">—</dd></div>
+        <div><dt>Instruction</dt><dd id="result-prompt">—</dd></div>
+        <div><dt>OpenAI request id</dt><dd id="result-request-id">—</dd></div>
+        <div><dt>Reported usage</dt><dd id="result-usage">—</dd></div>
+      </dl>
+
+      <p class="help">
+        Send the saved image to the sponsor with a note on artwork fidelity, placement, product
+        fidelity and whether the embroidery looks believable.
+      </p>
+    </section>
+
+    <section class="card card--quiet" aria-labelledby="handling-heading">
+      <h2 id="handling-heading">How this page handles your key and images</h2>
+      <ul class="plain-list">
+        <li>Your name, key, mockup and result are held in this page's memory only.</li>
+        <li>Disconnecting or reloading clears them. There is no saved key and no history.</li>
+        <li>Nothing is written to browser storage, and a reply that arrives after you disconnect is discarded.</li>
+        <li>Your key goes to OpenAI over HTTPS to authenticate the request. Clearing this page says nothing about what OpenAI retains.</li>
+        <li>Downloads are your own copies and are outside this page's control once saved.</li>
+      </ul>
+      <p class="help" id="build-line"></p>
+    </section>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
