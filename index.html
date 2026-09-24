@@ -2,188 +2,231 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; style-src &#x27;self&#x27;; img-src &#x27;self&#x27; blob: data:; connect-src https://api.openai.com; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src https://api.openai.com/v1/models https://api.openai.com/v1/images/edits; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Decoration Preview — Embroidery</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Decoration Preview — Embroidery Workspace</title>
+  <link rel="stylesheet" href="styles.css?v=20260924-clipboard">
   <link rel="icon" href="data:,">
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to the form</a>
+  <a class="skip-link" id="workspace-skip" href="#main" hidden>Skip to workspace</a>
 
-  <header class="page-header">
-    <div class="page-header__titles">
-      <h1>Decoration Preview</h1>
-      <p class="page-header__subtitle">Turn a product mockup into an embroidery preview for design review.</p>
-    </div>
-    <p class="badge" id="phase-badge">Phase 1 · Embroidery</p>
-  </header>
-
-  <main id="main">
-    <!-- Step 1 and 2: who is testing, and the key they were assigned. -->
-    <section class="card" id="connect-card" aria-labelledby="connect-heading">
-      <h2 id="connect-heading"><span class="step">1</span> Connect</h2>
-
-      <div class="field">
-        <label for="tester-name">Your name</label>
-        <input type="text" id="tester-name" name="tester-name" autocomplete="off"
-               spellcheck="false" maxlength="80"
-               aria-describedby="tester-name-help tester-name-error">
-        <p class="help" id="tester-name-help">Used to label the results you send to the sponsor. It is not sent to OpenAI.</p>
-        <p class="error" id="tester-name-error" role="alert"></p>
-      </div>
-
-      <div class="field">
-        <label for="api-key">Your assigned OpenAI API key</label>
-        <input type="password" id="api-key" name="api-key" autocomplete="off"
-               autocapitalize="off" autocorrect="off" spellcheck="false"
-               aria-describedby="api-key-help api-key-error">
-        <p class="help" id="api-key-help">
-          Held in this page only, for as long as you stay connected. It is sent to OpenAI over HTTPS
-          to authenticate your request, and is never put in the prompt, a link, or a saved file.
-        </p>
-        <p class="error" id="api-key-error" role="alert"></p>
-      </div>
-
-      <div class="actions">
-        <button type="button" id="connect-button" class="primary">Connect</button>
-        <button type="button" id="disconnect-button" class="secondary" hidden>Disconnect and clear</button>
-      </div>
-
-      <p class="status" id="connection-status" role="status">Not connected.</p>
-    </section>
-
-    <!-- Step 3: the mockup. -->
-    <section class="card" id="source-card" aria-labelledby="source-heading">
-      <h2 id="source-heading"><span class="step">2</span> Product mockup</h2>
-
-      <div class="field">
-        <label for="source-file">Image containing the product and its artwork</label>
-        <input type="file" id="source-file" name="source-file"
-               aria-describedby="source-file-help source-file-error">
-        <p class="help" id="source-file-help">One PNG, JPEG or WebP image, up to 20 MB.</p>
-        <p class="error" id="source-file-error" role="alert"></p>
-        <p class="notice" id="source-file-advice" hidden></p>
-      </div>
-
-      <figure class="preview preview--source" id="source-preview" hidden>
-        <img id="source-image" alt="The product mockup you selected">
-        <figcaption id="source-details"></figcaption>
-      </figure>
-    </section>
-
-    <!-- Step 4: fixed treatment plus the approved optional notes. -->
-    <section class="card" id="treatment-card" aria-labelledby="treatment-heading">
-      <h2 id="treatment-heading"><span class="step">3</span> Treatment</h2>
-
-      <p class="fixed-treatment">
-        <strong>Embroidery</strong>
-        <span class="help">Fixed for this phase. Choosing between decoration methods arrives in phase 2.</span>
-      </p>
-
-      <div class="field">
-        <label for="notes">Additional instructions <span class="optional">(optional)</span></label>
-        <textarea id="notes" name="notes" rows="3" maxlength="500" spellcheck="true"
-                  placeholder="For example: keep the small lettering readable."
-                  aria-describedby="notes-help notes-count notes-error"></textarea>
-        <p class="help" id="notes-help">
-          Added to the managed embroidery instruction as clearly labelled guidance. Leave it blank to
-          use the managed instruction on its own.
-        </p>
-        <p class="counter" id="notes-count">500 characters remaining</p>
-        <p class="error" id="notes-error" role="alert"></p>
-      </div>
-
-      <details class="disclosure">
-        <summary>Read the managed embroidery instruction</summary>
-        <p class="help">
-          The firm writes and maintains this text. In a page like this one it is visible to you and is
-          not something the page can enforce.
-        </p>
-        <pre class="prompt-text" id="managed-prompt"></pre>
-      </details>
-    </section>
-
-    <!-- Step 5: the single request. -->
-    <section class="card" id="generate-card" aria-labelledby="generate-heading">
-      <h2 id="generate-heading"><span class="step">4</span> Generate</h2>
-
-      <dl class="request-summary" id="request-summary">
-        <div><dt>Model</dt><dd id="summary-model">—</dd></div>
-        <div><dt>Output</dt><dd id="summary-output">—</dd></div>
-        <div><dt>Instruction</dt><dd id="summary-prompt">—</dd></div>
-      </dl>
-
-      <div class="actions">
-        <button type="button" id="generate-button" class="primary" disabled>Generate embroidery preview</button>
-        <span class="pending" id="pending-indicator" hidden>
-          <span class="spinner" aria-hidden="true"></span>
-          <span id="pending-text">Working…</span>
-        </span>
-      </div>
-
-      <p class="help">
-        One request per press. This page never retries on its own, because each attempt is a separate
-        charge on your key.
-      </p>
-
-      <div class="message message--error" id="error-panel" role="alert" hidden>
-        <h3 id="error-title"></h3>
-        <p id="error-message"></p>
-        <p class="message__meta" id="error-meta" hidden></p>
-      </div>
-    </section>
-
-    <!-- Result. -->
-    <section class="card" id="result-card" aria-labelledby="result-heading" hidden>
-      <h2 id="result-heading">Result</h2>
-
-      <div class="comparison">
-        <figure class="preview">
-          <img id="compare-source" alt="The mockup you supplied">
-          <figcaption>Supplied mockup</figcaption>
-        </figure>
-        <figure class="preview">
-          <img id="compare-result" alt="The generated embroidery preview">
-          <figcaption>Embroidery preview</figcaption>
-        </figure>
-      </div>
-
-      <div class="actions">
-        <a id="download-link" class="primary as-button" download>Download the preview</a>
-        <span class="help" id="download-note">Keep it: the image exists only in this page until you save it.</span>
-      </div>
-
-      <dl class="request-summary" id="result-details">
-        <div><dt>Mockup</dt><dd id="result-source">—</dd></div>
-        <div><dt>File</dt><dd id="result-filename">—</dd></div>
-        <div><dt>Generated</dt><dd id="result-generated">—</dd></div>
-        <div><dt>Settings</dt><dd id="result-settings">—</dd></div>
-        <div><dt>Instruction</dt><dd id="result-prompt">—</dd></div>
-        <div><dt>OpenAI request id</dt><dd id="result-request-id">—</dd></div>
-        <div><dt>Reported usage</dt><dd id="result-usage">—</dd></div>
-      </dl>
-
-      <p class="help">
-        Send the saved image to the sponsor with a note on artwork fidelity, placement, product
-        fidelity and whether the embroidery looks believable.
-      </p>
-    </section>
-
-    <section class="card card--quiet" aria-labelledby="handling-heading">
-      <h2 id="handling-heading">How this page handles your key and images</h2>
-      <ul class="plain-list">
-        <li>Your name, key, mockup and result are held in this page's memory only.</li>
-        <li>Disconnecting or reloading clears them. There is no saved key and no history.</li>
-        <li>Nothing is written to browser storage, and a reply that arrives after you disconnect is discarded.</li>
-        <li>Your key goes to OpenAI over HTTPS to authenticate the request. Clearing this page says nothing about what OpenAI retains.</li>
-        <li>Downloads are your own copies and are outside this page's control once saved.</li>
-      </ul>
-      <p class="help" id="build-line"></p>
+  <main class="access-page" id="access-page" aria-labelledby="access-heading">
+    <section class="access-card">
+      <p class="access-eyebrow">Decoration Preview</p>
+      <h1 id="access-heading">Connect to workspace</h1>
+      <p class="access-description">Enter a name and paste an API key to continue.</p>
+      <form id="connect-form" method="post" autocomplete="off" novalidate>
+        <div class="field">
+          <label for="tester-name">Name</label>
+          <input type="text" id="tester-name" maxlength="80" autocomplete="off" placeholder="Your name" required aria-describedby="name-error">
+          <p class="error" id="name-error" role="alert"></p>
+        </div>
+        <fieldset class="field key-field" id="key-controls" aria-describedby="api-key-error">
+          <legend>OpenAI API key</legend>
+          <button type="button" class="button button--secondary key-paste" id="paste-api-key" aria-describedby="key-paste-help api-key-error" disabled>Paste API key</button>
+          <div class="key-loaded" id="key-loaded" hidden>
+            <span>Key loaded</span>
+            <div class="key-actions">
+              <button type="button" class="text-button" id="replace-api-key" aria-label="Replace API key" aria-describedby="key-paste-help api-key-error">Replace</button>
+              <button type="button" class="text-button" id="clear-api-key" aria-label="Clear API key">Clear</button>
+            </div>
+          </div>
+          <p class="sr-only" id="key-paste-help">Use the paste button, or focus it and press Command+V or Ctrl+V.</p>
+          <p class="sr-only" id="key-status" role="status"></p>
+          <p class="error" id="api-key-error" role="alert"></p>
+        </fieldset>
+        <p class="connection-error" id="connection-error" role="alert" tabindex="-1" hidden></p>
+        <button type="submit" class="button button--primary access-submit" id="connect-button" disabled><span class="spinner" id="connect-spinner" aria-hidden="true" hidden></span><span id="connect-label">Connect</span></button>
+        <button type="button" class="button button--secondary access-cancel" id="cancel-connect" hidden>Cancel</button>
+        <p class="sr-only" id="connection-status" role="status"></p>
+      </form>
+      <noscript><p class="noscript-note">JavaScript is required to verify your key and open the workspace.</p></noscript>
     </section>
   </main>
 
-  <script type="module" src="js/main.js"></script>
+  <main class="workspace" id="main" aria-label="Decoration Preview workspace" tabindex="-1" hidden inert>
+    <aside class="settings-panel" aria-labelledby="setup-heading">
+      <div class="panel-heading">
+        <h2 id="setup-heading" class="sr-only">Source and parameters</h2>
+        <label for="decoration-type">Decoration type</label>
+        <select id="decoration-type" name="decoration-type">
+          <option value="embroidery" selected>Embroidery</option>
+        </select>
+      </div>
+
+      <div class="settings-scroll">
+        <section class="settings-section" id="source-card" aria-labelledby="source-heading">
+          <div class="section-heading">
+            <h3 id="source-heading">Product mockup</h3>
+            <span class="optional">One image</span>
+          </div>
+          <label class="upload-zone" for="source-file">
+            <input type="file" id="source-file" name="source-file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-describedby="source-file-help source-file-error">
+            <span class="upload-content">
+              <span class="upload-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" /></svg></span>
+              <span class="upload-title" id="upload-title">Choose a product mockup</span>
+              <span class="upload-hint" id="source-file-help">PNG, JPG or WebP · Up to 20 MB</span>
+            </span>
+          </label>
+          <p class="error" id="source-file-error" role="alert"></p>
+          <figure class="source-preview" id="source-preview" hidden>
+            <div class="source-image-wrap"><img id="source-image" alt="Your uploaded product mockup"></div>
+            <figcaption id="source-details"></figcaption>
+          </figure>
+          <p class="section-help">Use a product image with the artwork already placed.</p>
+        </section>
+
+        <section class="settings-section" aria-labelledby="output-heading">
+          <div class="section-heading"><h3 id="output-heading">Output</h3><span class="format-label">PNG</span></div>
+          <label class="toggle-row" for="transparency-output">
+            <span><span class="control-label">Transparent output</span><span class="control-description">Keep the embroidery. Remove the product.</span></span>
+            <span class="switch"><input type="checkbox" id="transparency-output" name="transparency" checked><span class="switch-track" aria-hidden="true"></span></span>
+          </label>
+          <fieldset class="framing-field" id="framing-field">
+            <legend>Framing</legend>
+            <div class="segmented-control">
+              <label><input type="radio" name="framing" value="at-size"><span>At size</span></label>
+              <label><input type="radio" name="framing" value="solo" checked><span>Solo</span></label>
+            </div>
+            <p class="section-help" id="framing-help">Fill the output with embroidery while preserving its proportions.</p>
+          </fieldset>
+          <div class="field resolution-field">
+            <label for="output-size">Resolution</label>
+            <select id="output-size" aria-describedby="resolution-help">
+              <option value="source">Match source</option>
+              <option value="2k" selected>2K</option>
+              <option value="maximum">Maximum available</option>
+            </select>
+            <p class="section-help" id="resolution-help">Select a source to calculate output dimensions.</p>
+          </div>
+        </section>
+
+        <section class="settings-section" id="treatment-card" aria-labelledby="treatment-heading">
+          <div class="section-heading">
+            <h3 id="treatment-heading">Instructions</h3>
+          </div>
+          <div class="field">
+            <label for="notes">Additional instructions <span class="optional">Optional</span></label>
+            <textarea id="notes" name="notes" rows="2" maxlength="500" placeholder="E.g. keep small lettering crisp and preserve the thread colors." aria-describedby="notes-count"></textarea>
+            <div class="field-footer"><span>Fine-tune the details.</span><span id="notes-count">0 / 500</span></div>
+          </div>
+          <details class="prompt-disclosure">
+            <summary>View embroidery instructions</summary>
+            <p class="section-help">Instructions for Generate preview, including output mode and your notes. Product + solo uses its two named modes.</p>
+            <pre id="managed-prompt" class="prompt-text"></pre>
+          </details>
+        </section>
+
+      </div>
+
+      <div class="output-naming" aria-label="Output filename">
+        <div class="field">
+          <label for="output-name">Name</label>
+          <input type="text" id="output-name" placeholder="Name" autocomplete="off" spellcheck="false" required aria-describedby="output-filename">
+        </div>
+        <div class="field">
+          <label for="output-number">Number</label>
+          <input type="text" id="output-number" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off" spellcheck="false" aria-describedby="output-filename">
+        </div>
+      </div>
+      <section class="generate-dock" aria-label="Generation actions">
+        <button type="button" class="button button--primary" id="generate-button" disabled aria-describedby="generation-help"><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m13 3 1.9 6.1L21 11l-6.1 1.9L13 19l-1.9-6.1L5 11l6.1-1.9L13 3ZM5 3v4M3 5h4M20 17v4M18 19h4" /></svg>Generate preview</button>
+        <button type="button" class="button button--secondary" id="cancel-generation" hidden>Stop waiting</button>
+        <p id="generation-help" role="status">Select a mockup to generate one preview.</p>
+        <button type="button" class="button button--secondary button--paired" id="generate-pair-button" disabled aria-describedby="pair-generation-help"><span>Generate product + solo</span><span class="button-count">2 images</span></button>
+        <p id="pair-generation-help" role="status">Two paid requests · Product at selected resolution + Solo at maximum</p>
+      </section>
+    </aside>
+
+    <section class="output-panel" aria-labelledby="preview-heading">
+      <div class="output-toolbar" aria-label="Model settings">
+        <div class="toolbar-field model-field">
+          <label for="model-select">Model <span>OpenAI</span></label>
+          <select id="model-select">
+            <option value="gpt-image-2" selected>GPT Image 2</option>
+            <option value="gpt-image-2.5-flare">GPT Image 2.5 · Flare</option>
+            <option value="gpt-image-2.5-sunburst">GPT Image 2.5 · Sunburst</option>
+          </select>
+        </div>
+        <div class="toolbar-field effort-field">
+          <label for="effort-select">Effort</label>
+          <select id="effort-select">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high" selected>High</option>
+            <option value="xhigh" disabled>Extra high · 2.5</option>
+            <option value="max" disabled>Max · 2.5</option>
+          </select>
+        </div>
+        <button type="button" id="remember-settings" class="button button--remember" disabled><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4h12v17l-6-4-6 4V4Z" /></svg>Remember these settings</button>
+        <button type="button" class="button button--disconnect" id="disconnect-button">Disconnect</button>
+      </div>
+
+      <div class="preview-workspace">
+        <div class="preview-heading">
+          <div class="preview-title"><h2 id="preview-heading">Output preview</h2><span class="output-mode" id="output-mode">Solo embroidery</span></div>
+          <div class="filename-preview"><span>Next output</span><output id="output-filename" for="output-name output-number decoration-type" aria-live="polite">[Name].embroidery.png</output></div>
+          <button type="button" class="button button--download" id="download-result" disabled><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4" /></svg>Download</button>
+        </div>
+
+        <div class="preview-stage" id="preview-stage" data-transparent="true">
+          <div class="canvas-corner canvas-corner--tl" aria-hidden="true"></div>
+          <div class="canvas-corner canvas-corner--tr" aria-hidden="true"></div>
+          <div class="canvas-corner canvas-corner--bl" aria-hidden="true"></div>
+          <div class="canvas-corner canvas-corner--br" aria-hidden="true"></div>
+          <div class="empty-state" id="output-empty">
+            <p>First preview will land here.</p>
+          </div>
+          <div class="loading-state" id="pending-indicator" role="status" hidden><span class="spinner" aria-hidden="true"></span><strong id="pending-title">Generating preview</strong><p id="pending-text">Waiting for image output…</p></div>
+          <figure class="result-preview" id="result-card" hidden><img id="compare-result" alt="Generated embroidery preview"><figcaption class="sr-only">Embroidery output</figcaption></figure>
+          <div class="canvas-error" id="error-panel" role="alert" hidden><h3 id="error-title"></h3><p id="error-message"></p><button type="button" class="button button--secondary" id="dismiss-error">Dismiss</button></div>
+        </div>
+
+        <div class="canvas-footer"><span id="canvas-description" aria-live="polite">Artwork fills the canvas · Transparent PNG</span><span id="canvas-source">No mockup selected</span></div>
+        <div class="result-status" id="result-status" hidden><p id="result-warning" role="status"></p><button type="button" class="text-button" id="retry-save" hidden>Retry local save</button></div>
+      </div>
+
+      <section class="session-tray" aria-labelledby="session-heading">
+        <div class="session-heading"><div><h3 id="session-heading">Image history</h3><span class="session-count" id="history-count">0</span></div><div class="gallery-paging" id="gallery-paging" hidden><button type="button" class="text-button" id="gallery-previous" aria-label="Previous page of images">Previous</button><span id="gallery-page"></span><button type="button" class="text-button" id="gallery-next" aria-label="Next page of images">Next</button></div></div>
+        <div class="history-gallery" id="history-gallery" aria-label="Generated images" hidden></div>
+        <div class="session-bottom">
+          <div class="session-empty" id="history-empty"><span class="thumbnail-placeholder" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1" /><path d="m3 16 5-5 5 5 3-3 5 5" /></svg></span><p id="gallery-message">Completed previews are saved in this browser.</p></div>
+          <div class="history-storage">
+            <span id="history-usage" title="Saved history size; excludes browser database overhead." aria-live="polite">— MB</span>
+            <button type="button" class="history-gear" id="history-settings" aria-label="Manage local history" aria-haspopup="dialog" aria-controls="history-dialog" aria-describedby="history-usage" title="Manage local history"><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9.5 3-.6 2.4-1.2.7-2.4-.7-2.5 4.3 1.8 1.7v1.3l-1.8 1.7 2.5 4.3 2.4-.7 1.2.7.6 2.3h5l.6-2.3 1.2-.7 2.4.7 2.5-4.3-1.8-1.7v-1.3l1.8-1.7-2.5-4.3-2.4.7-1.2-.7-.6-2.4Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <dialog class="history-dialog" id="history-dialog" aria-labelledby="history-heading" aria-describedby="history-scope">
+      <div class="history-dialog-heading"><h2 id="history-heading">Local history</h2><button type="button" class="history-close" id="history-close" aria-label="Close history settings" autofocus><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <p class="history-summary" id="history-summary">Reading storage…</p>
+      <p class="history-scope" id="history-scope">Delete saved images from this browser. Downloads and settings are unaffected.</p>
+      <form id="history-form" novalidate>
+        <fieldset id="history-options">
+          <legend>Delete history</legend>
+          <div class="history-option">
+            <label for="history-older"><input type="radio" id="history-older" name="history-scope" value="older" checked>Older than</label>
+            <label class="sr-only" for="history-days">Age in days</label><input type="number" id="history-days" value="30" min="1" max="36500" step="1" inputmode="numeric" required aria-describedby="history-days-error"><span>days</span>
+          </div>
+          <div class="history-option"><label for="history-all"><input type="radio" id="history-all" name="history-scope" value="all">All history</label></div>
+        </fieldset>
+        <p class="error" id="history-days-error" role="alert"></p>
+        <p class="history-selection" id="history-selection" aria-live="polite">Reading history…</p>
+        <p class="history-warning" id="history-warning">Deletion cannot be undone.</p>
+        <p class="error" id="history-error" role="alert"></p>
+        <p class="history-status" id="history-status" role="status"></p>
+        <div class="history-actions"><button type="button" class="button button--secondary" id="history-retry" hidden>Retry</button><button type="button" class="button button--secondary" id="history-cancel">Cancel</button><button type="submit" class="button button--primary" id="history-delete" aria-describedby="history-selection history-warning" disabled>Delete history</button></div>
+      </form>
+      <p class="history-size-note">Size includes saved images and metadata; browser overhead is excluded. Storage limit: <span id="history-limit">500 MB</span>.</p>
+    </dialog>
+    <div class="toast" id="workspace-toast" role="status" hidden><span id="toast-message"></span><button type="button" id="dismiss-toast" aria-label="Dismiss notification">×</button></div>
+  </main>
+
+  <!-- Browser-only workspace. Credentials stay in the connection gate's memory. -->
+  <script type="module" src="js/ui-preview.js?v=20260924-clipboard"></script>
 </body>
 </html>

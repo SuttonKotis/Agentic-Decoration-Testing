@@ -8,6 +8,9 @@
 
 import { OUTPUT, PROVIDER, TIMING } from './config.js';
 import { redactSecrets } from './validation.js';
+import { MODELS, effortsForModel } from './settings.js';
+import { isSupportedSize } from './size.js';
+import { decodeBoundedBase64, readBoundedText, readImageDimensions, RESOURCE_LIMITS, ResourceLimitError } from './resource-limits.js';
 
 /**
  * Build the reason handed to `AbortController.abort()`. `fetch` rejects with
@@ -51,10 +54,10 @@ function requestIdOf(response) {
   }
 }
 
-async function readErrorBody(response, apiKey) {
+async function readErrorBody(response, apiKey, signal) {
   let raw = '';
   try {
-    raw = await response.text();
+    raw = await readBoundedText(response, RESOURCE_LIMITS.errorResponseBytes, signal);
   } catch {
     return { message: '', code: null, type: null };
   }
@@ -62,13 +65,13 @@ async function readErrorBody(response, apiKey) {
     const parsed = JSON.parse(raw);
     const error = parsed && parsed.error ? parsed.error : parsed;
     return {
-      message: redactSecrets(typeof error?.message === 'string' ? error.message : '', apiKey),
-      code: typeof error?.code === 'string' ? error.code : null,
+      message: redactSecrets(typeof error?.message === 'string' ? error.message : '', apiKey).slice(0, RESOURCE_LIMITS.errorMessageCharacters),
+      code: typeof error?.code === 'string' ? error.code.slice(0, 200) : null,
       // `type` carries the category when the code is new or absent.
-      type: typeof error?.type === 'string' ? error.type : null,
+      type: typeof error?.type === 'string' ? error.type.slice(0, 200) : null,
     };
   } catch {
-    return { message: redactSecrets(raw.slice(0, 400), apiKey), code: null, type: null };
+    return { message: redactSecrets(raw, apiKey).slice(0, 400), code: null, type: null };
   }
 }
 
@@ -155,7 +158,7 @@ function withProviderDetail(message, providerMessage) {
  * Turn a non-2xx response into an actionable error.
  * `mayBeBilled` is true only where a charge is actually plausible.
  */
-function classifyHttpFailure({ status, providerMessage, providerCode, providerType, requestId }) {
+function classifyHttpFailure({ status, providerMessage, providerCode, providerType, requestId, model }) {
   const shared = { status, requestId, providerCode, providerType };
 
   // A credit or spending limit arrives on more than one status, and it is the
@@ -191,7 +194,7 @@ function classifyHttpFailure({ status, providerMessage, providerCode, providerTy
       kind: 'forbidden',
       title: 'This key is not allowed to make this request',
       message: withProviderDetail(
-        `The key was accepted but is not permitted to use ${PROVIDER.model} on the image edit endpoint. Ask whoever assigned the key to check the project's model permissions.`,
+        `The key was accepted but is not permitted to use ${model} on the image edit endpoint. Ask whoever assigned the key to check the project's model permissions.`,
         providerMessage,
       ),
     });
@@ -200,7 +203,7 @@ function classifyHttpFailure({ status, providerMessage, providerCode, providerTy
     return new ProviderError({
       ...shared,
       kind: 'not_found',
-      title: `${PROVIDER.model} is not available to this account`,
+      title: `${model} is not available to this account`,
       message: withProviderDetail(
         'The endpoint or the model was not found for this key. This app does not substitute a different model.',
         providerMessage,
@@ -269,7 +272,7 @@ function classifyTransportFailure(error, { billable }) {
       return new ProviderError({
         kind: 'cancelled',
         title: 'Request stopped',
-        message: 'You disconnected before the preview came back.',
+        message: 'The page stopped waiting. A request already received by OpenAI may still complete and be billed. Check usage before starting another attempt.',
         mayBeBilled: billable,
       });
     }
@@ -307,13 +310,10 @@ function uploadFilename(file) {
   return `mockup.${extension}`;
 }
 
-function decodeBase64(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
+function responseLimitError(requestId) {
+  return new ProviderError({ kind: 'resource-limit', title: 'Returned image or response is too large',
+    message: 'The reply exceeded this page’s image or response safety limits and was not decoded or saved. The request may still be billed. Check OpenAI usage before trying a smaller output; no automatic retry was made.',
+    requestId, mayBeBilled: true });
 }
 
 /**
@@ -333,6 +333,10 @@ export async function checkProviderAccess({ apiKey, fetchImpl = globalThis.fetch
       method: 'GET',
       headers: authHeaders(apiKey),
       signal,
+      cache: 'no-store',
+      credentials: 'omit',
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
     });
   } catch (error) {
     if (error && (error.name === 'AbortError' || error.abortReason)) {
@@ -341,7 +345,7 @@ export async function checkProviderAccess({ apiKey, fetchImpl = globalThis.fetch
         modelAvailable: null,
         message:
           error.abortReason === 'timeout'
-            ? 'The key check did not finish within the time limit, so provider access is unconfirmed. You can still try a preview.'
+            ? 'The connection check timed out. Check your network and try again.'
             : 'The key check was stopped.',
       };
     }
@@ -349,54 +353,67 @@ export async function checkProviderAccess({ apiKey, fetchImpl = globalThis.fetch
       access: 'unconfirmed',
       modelAvailable: null,
       message:
-        'The key could not be checked, so provider access is unconfirmed. You can still try a ' +
-        'preview; a key OpenAI does not accept would fail at that point.',
+        'The connection could not be verified. Check your network or browser restrictions and try again.',
     };
   }
 
   if (response.status === 401) {
-    const { message, code, type } = await readErrorBody(response, apiKey);
+    const { message, code, type } = await readErrorBody(response, apiKey, signal);
     const reason = classifyMetadataRejection({ code, type, message });
 
     if (reason === 'invalid') {
       return {
         access: 'rejected',
         modelAvailable: null,
-        message: message || 'OpenAI rejected this API key.',
+        message: 'OpenAI rejected this API key. Check that the full key was copied, or use another key.',
       };
     }
 
-    // The key is kept. This says nothing about whether an edit is permitted.
+    // Listing models must be allowed to confirm access through the entry gate.
     return {
       access: 'unconfirmed',
       modelAvailable: null,
       message:
         (reason === 'permission'
-          ? 'This key is not permitted to list models, so provider access could not be confirmed here. '
-          : 'OpenAI declined the model-list check without saying the key is invalid, so provider access is unconfirmed. ') +
-        'The key has been kept. Only attempting an edit will settle whether it can generate.' +
-        (message ? `\n\nOpenAI said: ${message}` : ''),
+          ? 'This key cannot list models. Enable model-list read access for the key, or use another key.'
+          : 'OpenAI did not confirm this connection. Check the key and its permissions, then try again.'),
     };
   }
   if (!response.ok) {
-    const { message } = await readErrorBody(response, apiKey);
+    if (response.body) void response.body.cancel().catch(() => {});
+    const message = response.status === 403
+      ? 'This key cannot complete the connection check. Check its model-list permissions, or use another key.'
+      : response.status === 429
+        ? 'OpenAI is limiting connection checks. Wait a moment, then try again.'
+        : response.status >= 500
+          ? 'OpenAI is unavailable for the connection check. Try again shortly.'
+          : `OpenAI did not confirm this connection (HTTP ${response.status}). Check your key and try again.`;
     return {
       access: 'unconfirmed',
       modelAvailable: null,
-      message:
-        `OpenAI answered the key check with status ${response.status}. ` +
-        (message || 'You can still try a preview.'),
+      message,
     };
   }
 
   let modelAvailable = null;
   try {
-    const body = await response.json();
-    if (Array.isArray(body?.data)) {
+    const body = JSON.parse(await readBoundedText(response, RESOURCE_LIMITS.modelResponseBytes, signal));
+    if (body?.object === 'list' && Array.isArray(body.data)
+      && body.data.every((entry) => entry?.object === 'model' && typeof entry.id === 'string' && entry.id.length > 0)) {
       modelAvailable = body.data.some((entry) => entry?.id === PROVIDER.model);
     }
   } catch {
     modelAvailable = null;
+  }
+
+  if (modelAvailable === null || signal?.aborted) {
+    return {
+      access: 'unconfirmed',
+      modelAvailable: null,
+      message: signal?.aborted
+        ? 'The connection check did not finish. Try again.'
+        : 'OpenAI returned an unreadable connection response. Try again.',
+    };
   }
 
   return {
@@ -427,16 +444,29 @@ export async function requestEmbroideryPreview({
   file,
   prompt,
   size,
+  model = PROVIDER.model,
+  quality = OUTPUT.quality,
+  transparency = false,
   signal = null,
   fetchImpl = globalThis.fetch,
 }) {
+  const dimensions = typeof size === 'string' && /^\d+x\d+$/.test(size) ? size.split('x').map(Number) : [];
+  if (!MODELS.includes(model) || !effortsForModel(model).includes(quality) ||
+      !isSupportedSize(...dimensions) || typeof transparency !== 'boolean' ||
+      typeof prompt !== 'string' || !prompt || prompt.length > PROVIDER.maxPromptCharacters ||
+      !(file instanceof Blob) || file.size === 0) {
+    throw new ProviderError({ kind: 'validation', title: 'Check the request settings', message: 'The model, effort, image, prompt, or dimensions are invalid. No request was sent.' });
+  }
+  if (signal?.aborted) throw classifyTransportFailure(signal.reason, { billable: false });
   const form = new FormData();
-  form.append('model', PROVIDER.model);
+  form.append('model', model);
   form.append('image', file, uploadFilename(file));
   form.append('prompt', prompt);
   form.append('size', size);
-  form.append('quality', OUTPUT.quality);
+  form.append('quality', quality);
   form.append('output_format', OUTPUT.outputFormat);
+  form.append('background', transparency ? 'transparent' : 'opaque');
+  form.append('n', '1');
 
   let response;
   try {
@@ -446,28 +476,35 @@ export async function requestEmbroideryPreview({
       headers: authHeaders(apiKey),
       body: form,
       signal,
+      cache: 'no-store',
+      credentials: 'omit',
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
     });
   } catch (error) {
     throw classifyTransportFailure(error, { billable: true });
   }
 
-  const requestId = requestIdOf(response);
+  const requestId = redactSecrets(requestIdOf(response) || '', apiKey).slice(0, 200) || null;
 
   if (!response.ok) {
-    const { message, code, type } = await readErrorBody(response, apiKey);
+    const { message, code, type } = await readErrorBody(response, apiKey, signal);
     throw classifyHttpFailure({
       status: response.status,
       providerMessage: message,
       providerCode: code,
       providerType: type,
       requestId,
+      model,
     });
   }
 
   let body;
   try {
-    body = await response.json();
-  } catch {
+    body = JSON.parse(await readBoundedText(response, RESOURCE_LIMITS.imageResponseBytes, signal));
+  } catch (error) {
+    if (signal?.aborted) throw classifyTransportFailure(signal.reason, { billable: true });
+    if (error instanceof ResourceLimitError) throw responseLimitError(requestId);
     throw new ProviderError({
       kind: 'malformed',
       title: 'OpenAI returned a reply this page could not read',
@@ -491,8 +528,20 @@ export async function requestEmbroideryPreview({
   }
 
   const outputFormat = body?.output_format || OUTPUT.outputFormat;
+  let bytes;
+  try {
+    if (outputFormat !== 'png') throw new Error('Unexpected output format.');
+    bytes = decodeBoundedBase64(base64);
+    // Bound dimensions before Blob URLs or the browser decoder see the PNG.
+    readImageDimensions(bytes, OUTPUT.mimeType);
+  } catch (error) {
+    if (error instanceof ResourceLimitError) throw responseLimitError(requestId);
+    throw new ProviderError({ kind: 'malformed', title: 'OpenAI returned invalid image data',
+      message: 'No readable PNG was returned. Check usage before retrying; the request may have been billed.', requestId, mayBeBilled: true });
+  }
+  if (signal?.aborted) throw classifyTransportFailure(signal.reason, { billable: true });
   return {
-    blob: new Blob([decodeBase64(base64)], { type: `image/${outputFormat}` }),
+    blob: new Blob([bytes], { type: OUTPUT.mimeType }),
     requestId,
     usage: body?.usage ?? null,
     size: body?.size ?? null,

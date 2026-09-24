@@ -10,8 +10,6 @@
 
 export const SIZE_LIMITS = Object.freeze({
   step: 16,
-  /** Roughly one megapixel: the standard 1024x1024 area, at the source's shape. */
-  targetPixels: 1024 * 1024,
   minPixels: 655360,
   maxPixels: 3840 * 2160,
   maxEdge: 3840,
@@ -23,8 +21,13 @@ export const SIZE_LIMITS = Object.freeze({
 export const FALLBACK_SIZE = '1024x1024';
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
-const roundToStep = (value) =>
-  Math.max(SIZE_LIMITS.step, Math.round(value / SIZE_LIMITS.step) * SIZE_LIMITS.step);
+export function isSupportedSize(width, height) {
+  const pixels = width * height;
+  return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 &&
+    width % 16 === 0 && height % 16 === 0 && Math.max(width, height) <= SIZE_LIMITS.maxEdge &&
+    pixels >= SIZE_LIMITS.minPixels && pixels <= SIZE_LIMITS.maxPixels &&
+    width / height >= SIZE_LIMITS.minAspectRatio && width / height <= SIZE_LIMITS.maxAspectRatio;
+}
 
 /**
  * Choose the output size for a source image.
@@ -34,7 +37,7 @@ const roundToStep = (value) =>
  * @returns {{ size: string, width: number, height: number,
  *             aspectRatioClamped: boolean, matchesSourceAspect: boolean }}
  */
-export function chooseOutputSize(sourceWidth, sourceHeight) {
+export function chooseOutputSize(sourceWidth, sourceHeight, resolution = 'source') {
   const usable =
     Number.isFinite(sourceWidth) && Number.isFinite(sourceHeight) &&
     sourceWidth > 0 && sourceHeight > 0;
@@ -50,34 +53,57 @@ export function chooseOutputSize(sourceWidth, sourceHeight) {
   const sourceAspect = sourceWidth / sourceHeight;
   const aspect = clamp(sourceAspect, SIZE_LIMITS.minAspectRatio, SIZE_LIMITS.maxAspectRatio);
 
-  let width = Math.sqrt(SIZE_LIMITS.targetPixels * aspect);
-  let height = width / aspect;
+  const targetPixels = resolution === 'maximum' ? SIZE_LIMITS.maxPixels
+    : resolution === '2k' ? 2048 ** 2 / Math.max(aspect, 1 / aspect)
+      : sourceWidth * sourceHeight;
+  let targetWidth = Math.sqrt(clamp(targetPixels, SIZE_LIMITS.minPixels, SIZE_LIMITS.maxPixels) * aspect);
+  let targetHeight = targetWidth / aspect;
+  const scale = Math.min(1, SIZE_LIMITS.maxEdge / Math.max(targetWidth, targetHeight));
+  targetWidth *= scale;
+  targetHeight *= scale;
 
-  // Shrink proportionally if either edge would exceed the maximum.
-  const edgeOverrun = Math.max(width / SIZE_LIMITS.maxEdge, height / SIZE_LIMITS.maxEdge, 1);
-  width /= edgeOverrun;
-  height /= edgeOverrun;
-
-  width = roundToStep(width);
-  height = roundToStep(height);
-
-  // Rounding can push the area just outside the permitted range; nudge it back.
-  const area = width * height;
-  if (area < SIZE_LIMITS.minPixels || area > SIZE_LIMITS.maxPixels) {
-    const bound = area < SIZE_LIMITS.minPixels ? SIZE_LIMITS.minPixels : SIZE_LIMITS.maxPixels;
-    const scale = Math.sqrt(bound / area);
-    const adjust = area < SIZE_LIMITS.minPixels ? Math.ceil : Math.floor;
-    const toStep = (value) =>
-      clamp(adjust(value / SIZE_LIMITS.step) * SIZE_LIMITS.step, SIZE_LIMITS.step, SIZE_LIMITS.maxEdge);
-    width = toStep(width * scale);
-    height = toStep(height * scale);
+  // Search the legal grid near the source ratio, rather than independently
+  // rounding edges (which can violate minimum area or the 3:1 limit).
+  let best = null;
+  for (let width = 16; width <= SIZE_LIMITS.maxEdge; width += 16) {
+    const nearHeight = Math.floor(width / aspect / 16) * 16;
+    const heights = [nearHeight, nearHeight + 16];
+    if (resolution === '2k') heights.push(2048);
+    for (const height of heights) {
+      if (!isSupportedSize(width, height)) continue;
+      if (resolution === '2k' && Math.max(width, height) !== 2048) continue;
+      const score = Math.log(width / targetWidth) ** 2 + Math.log(height / targetHeight) ** 2 +
+        8 * Math.log((width / height) / aspect) ** 2;
+      if (!best || score < best.score) best = { width, height, score };
+    }
   }
+  const { width, height } = best;
 
   return {
     size: `${width}x${height}`,
     width,
     height,
     aspectRatioClamped: aspect !== sourceAspect,
-    matchesSourceAspect: true,
+    matchesSourceAspect: width * sourceHeight === height * sourceWidth,
   };
+}
+
+/** Render at a supported size; at-size exports always use the source canvas. */
+export function planOutput(sourceWidth, sourceHeight, settings) {
+  if (![sourceWidth, sourceHeight].every((edge) => Number.isSafeInteger(edge) && edge > 0)) {
+    throw new Error('The source needs readable pixel dimensions.');
+  }
+  const chosen = chooseOutputSize(sourceWidth, sourceHeight, settings.resolution);
+  const atSize = settings.transparency && settings.framing === 'at-size';
+  if (chosen.aspectRatioClamped && (!settings.transparency || atSize)) {
+    throw new Error('This source is wider or taller than the supported 3:1 range. Use Solo framing, or supply a less extreme source canvas.');
+  }
+  const originalCanvas = atSize || (settings.resolution === 'source' && !chosen.aspectRatioClamped);
+  const exportWidth = originalCanvas ? sourceWidth : chosen.width;
+  const exportHeight = originalCanvas ? sourceHeight : chosen.height;
+  if (Math.max(exportWidth, exportHeight) > 16384 || exportWidth * exportHeight > 32_000_000) {
+    throw new Error('This source canvas is too large for a local PNG export. Use a smaller source, or Solo framing at 2K or Maximum.');
+  }
+  return { ...chosen, exportWidth, exportHeight, atSize,
+    experimental: chosen.width * chosen.height > 2560 * 1440 };
 }
