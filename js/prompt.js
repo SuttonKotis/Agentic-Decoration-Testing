@@ -9,9 +9,17 @@
  */
 
 import { NOTES, PROVIDER } from './config.js';
+import { validateEmbroiderySize } from './embroidery-size.js?v=20260924-sizing';
 
 /** Bump on any wording change so test notes stay comparable across runs. */
-export const PROMPT_VERSION = 'embroidery-2026-09-23.3';
+export const PROMPT_VERSION = 'embroidery-2026-09-24.1';
+
+// Shared by every embroidery output mode, whether or not physical size is supplied.
+const EMBROIDERY_STITCH_RULES = [
+  'EMBROIDERY STITCH RULES.',
+  'Thread size should limit detail. Please change any registration marks to running stitches instead of satin stitches.',
+  'Anything smaller than 0.1" should not have a satin stitch outline with fill stitch, only satin stitch.',
+].join('\n');
 
 const MANAGED_EMBROIDERY_PROMPT = [
   'Re-render this photograph of a decorated product so that the artwork already',
@@ -43,9 +51,8 @@ const MANAGED_EMBROIDERY_PROMPT = [
   'change the product, its colour or its style; re-compose, crop, rotate or',
   'zoom the image; or add people, props or scenery that are not already there.',
   '',
-  'Keep small lettering and fine detail legible. Where a detail is too small to',
-  'embroider cleanly, render it as fine stitching rather than dropping,',
-  'simplifying or replacing it.',
+  'Keep small lettering and fine detail legible within the physical limits of',
+  'thread thickness and the embroidery stitch rules below.',
   '',
   'Return one photographic image of the same product in the same scene, with the',
   'artwork now reading as embroidery.',
@@ -66,7 +73,8 @@ const THREAD_ONLY_PROMPT = [
   'and curvature without rendering the surface underneath it.',
   'Preserve every original letter, word, number, symbol, font shape, spacing,',
   'artwork colour, proportion, rotation, and relative position. Keep small',
-  'details as fine stitching; do not simplify, redraw, retype, or omit them.',
+  'details legible within the physical limits of thread thickness and the',
+  'embroidery stitch rules below. Do not redraw, retype, or omit the artwork.',
   'Do not turn the product\'s construction seams or fabric texture into artwork.',
   '',
   'REMOVE ALL NON-THREAD MATERIAL.',
@@ -170,10 +178,22 @@ export function buildPrompt(notes = '', settings = {}) {
 }
 
 /** The managed default on its own, for display and for review. */
-export function managedPromptText({ transparency = false, framing = 'solo' } = {}) {
-  if (!transparency) return MANAGED_EMBROIDERY_PROMPT + '\n\nOUTPUT MODE: ON PRODUCT. Retain the complete product and scene. Return an opaque PNG.';
-  const placement = framing === 'at-size'
+export function managedPromptText(settings = {}) {
+  const { transparency = false, framing = 'solo' } = settings;
+  const size = validateEmbroiderySize(settings);
+  if (size.error) throw new Error(size.error);
+  const dimensions = size.width === null ? '' : [
+    'PHYSICAL SIZE OF THE EMBROIDERED DESIGN.',
+    `The embroidered design measures ${size.width} inches wide × ${size.height} inches high.`,
+    'Use these dimensions to proportion thread thickness, stitch density, and achievable detail at the actual embroidery size.',
+    'These measurements describe the embroidered artwork, not the product or image canvas. Preserve the supplied artwork proportions and placement.',
+    'Determine the stitch appearance at this physical size before any presentation scaling.',
+  ].join('\n');
+  const placement = !transparency
+    ? 'OUTPUT MODE: ON PRODUCT. Retain the complete product and scene. Return an opaque PNG.'
+    : framing === 'at-size'
     ? 'OUTPUT MODE: AT-SIZE OVERLAY. Keep the complete original canvas composition and the exact artwork coordinates, scale, rotation, and perspective relative to that canvas. Do not crop, recenter, or zoom. Empty product areas become transparent.'
     : 'OUTPUT MODE: SOLO. The only permitted reframing is to uniformly enlarge and center all embroidered elements together to occupy most of the output canvas, with a small clear margin. Preserve relative positions, proportions, rotation, and perspective. Do not clip fine details or isolated elements.';
-  return THREAD_ONLY_PROMPT + '\n\n' + placement;
+  return [transparency ? THREAD_ONLY_PROMPT : MANAGED_EMBROIDERY_PROMPT, EMBROIDERY_STITCH_RULES, dimensions, placement]
+    .filter(Boolean).join('\n\n');
 }

@@ -53,9 +53,13 @@ export function chooseOutputSize(sourceWidth, sourceHeight, resolution = 'source
   const sourceAspect = sourceWidth / sourceHeight;
   const aspect = clamp(sourceAspect, SIZE_LIMITS.minAspectRatio, SIZE_LIMITS.maxAspectRatio);
 
+  const targetEdge = resolution === '1k' ? 1024 : resolution === '2k' ? 2048 : null;
   const targetPixels = resolution === 'maximum' ? SIZE_LIMITS.maxPixels
-    : resolution === '2k' ? 2048 ** 2 / Math.max(aspect, 1 / aspect)
+    : targetEdge ? targetEdge ** 2 / Math.max(aspect, 1 / aspect)
       : sourceWidth * sourceHeight;
+  // Wide 1K canvases can be below the request minimum. Render at a legal size
+  // near the same aspect ratio, then downsample the export to a 1,024 px edge.
+  const fixedEdge = targetEdge && targetPixels >= SIZE_LIMITS.minPixels ? targetEdge : null;
   let targetWidth = Math.sqrt(clamp(targetPixels, SIZE_LIMITS.minPixels, SIZE_LIMITS.maxPixels) * aspect);
   let targetHeight = targetWidth / aspect;
   const scale = Math.min(1, SIZE_LIMITS.maxEdge / Math.max(targetWidth, targetHeight));
@@ -68,10 +72,10 @@ export function chooseOutputSize(sourceWidth, sourceHeight, resolution = 'source
   for (let width = 16; width <= SIZE_LIMITS.maxEdge; width += 16) {
     const nearHeight = Math.floor(width / aspect / 16) * 16;
     const heights = [nearHeight, nearHeight + 16];
-    if (resolution === '2k') heights.push(2048);
+    if (fixedEdge) heights.push(fixedEdge);
     for (const height of heights) {
       if (!isSupportedSize(width, height)) continue;
-      if (resolution === '2k' && Math.max(width, height) !== 2048) continue;
+      if (fixedEdge && Math.max(width, height) !== fixedEdge) continue;
       const score = Math.log(width / targetWidth) ** 2 + Math.log(height / targetHeight) ** 2 +
         8 * Math.log((width / height) / aspect) ** 2;
       if (!best || score < best.score) best = { width, height, score };
@@ -99,10 +103,13 @@ export function planOutput(sourceWidth, sourceHeight, settings) {
     throw new Error('This source is wider or taller than the supported 3:1 range. Use Solo framing, or supply a less extreme source canvas.');
   }
   const originalCanvas = atSize || (settings.resolution === 'source' && !chosen.aspectRatioClamped);
-  const exportWidth = originalCanvas ? sourceWidth : chosen.width;
-  const exportHeight = originalCanvas ? sourceHeight : chosen.height;
+  const aspect = clamp(sourceWidth / sourceHeight, SIZE_LIMITS.minAspectRatio, SIZE_LIMITS.maxAspectRatio);
+  const smallWidth = aspect >= 1 ? 1024 : Math.round(1024 * aspect);
+  const smallHeight = aspect >= 1 ? Math.round(1024 / aspect) : 1024;
+  const exportWidth = originalCanvas ? sourceWidth : settings.resolution === '1k' ? smallWidth : chosen.width;
+  const exportHeight = originalCanvas ? sourceHeight : settings.resolution === '1k' ? smallHeight : chosen.height;
   if (Math.max(exportWidth, exportHeight) > 16384 || exportWidth * exportHeight > 32_000_000) {
-    throw new Error('This source canvas is too large for a local PNG export. Use a smaller source, or Solo framing at 2K or Maximum.');
+    throw new Error('This source canvas is too large for a local PNG export. Use a smaller source, or Solo framing at 1K, 2K or Maximum.');
   }
   return { ...chosen, exportWidth, exportHeight, atSize,
     experimental: chosen.width * chosen.height > 2560 * 1440 };

@@ -1,5 +1,5 @@
-import { createHistoryRecord, historyKeyToken, listHistory, readHistoryImage, saveHistoryEntry, subscribeToHistory } from './history-store.js?v=20260924-hardening';
-import { outputMode } from './settings.js';
+import { createHistoryRecord, historyKeyToken, listHistory, readHistoryImage, saveHistoryEntry, subscribeToHistory } from './history-store.js?v=20260924-stats';
+import { outputMode } from './settings.js?v=20260924-sizing';
 import { historyOutputName } from './output-naming.js';
 import { assertImageDimensions, inspectImageBlob } from './resource-limits.js';
 

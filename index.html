@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>Decoration Preview — Embroidery Workspace</title>
-  <link rel="stylesheet" href="styles.css?v=20260924-clipboard">
+  <link rel="stylesheet" href="styles.css?v=20260924-stats">
   <link rel="icon" href="data:,">
 </head>
 <body>
@@ -16,7 +16,7 @@
     <section class="access-card">
       <p class="access-eyebrow">Decoration Preview</p>
       <h1 id="access-heading">Connect to workspace</h1>
-      <p class="access-description">Enter a name and paste an API key to continue.</p>
+      <p class="access-description">Enter a name and paste an API key to connect.</p>
       <form id="connect-form" method="post" autocomplete="off" novalidate>
         <div class="field">
           <label for="tester-name">Name</label>
@@ -33,7 +33,7 @@
               <button type="button" class="text-button" id="clear-api-key" aria-label="Clear API key">Clear</button>
             </div>
           </div>
-          <p class="sr-only" id="key-paste-help">Use the paste button, or focus it and press Command+V or Ctrl+V.</p>
+          <p class="sr-only" id="key-paste-help">Use the paste button, or focus it and press Command+V or Ctrl+V. Pasting a valid key starts the connection check when a name is entered.</p>
           <p class="sr-only" id="key-status" role="status"></p>
           <p class="error" id="api-key-error" role="alert"></p>
         </fieldset>
@@ -78,6 +78,22 @@
           <p class="section-help">Use a product image with the artwork already placed.</p>
         </section>
 
+        <section class="settings-section" aria-labelledby="design-size-heading">
+          <div class="section-heading"><h3 id="design-size-heading">Embroidery size <span class="optional">(inches)</span></h3><span class="optional">Optional</span></div>
+          <div class="design-size-fields">
+            <div class="field">
+              <label for="design-width">Width <span>W</span></label>
+              <input type="text" id="design-width" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="5.5" aria-describedby="design-size-error">
+            </div>
+            <span class="design-size-times" aria-hidden="true">×</span>
+            <div class="field">
+              <label for="design-height">Height <span>H</span></label>
+              <input type="text" id="design-height" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="3.5" aria-describedby="design-size-error">
+            </div>
+          </div>
+          <p class="error" id="design-size-error" role="alert"></p>
+        </section>
+
         <section class="settings-section" aria-labelledby="output-heading">
           <div class="section-heading"><h3 id="output-heading">Output</h3><span class="format-label">PNG</span></div>
           <label class="toggle-row" for="transparency-output">
@@ -92,15 +108,6 @@
             </div>
             <p class="section-help" id="framing-help">Fill the output with embroidery while preserving its proportions.</p>
           </fieldset>
-          <div class="field resolution-field">
-            <label for="output-size">Resolution</label>
-            <select id="output-size" aria-describedby="resolution-help">
-              <option value="source">Match source</option>
-              <option value="2k" selected>2K</option>
-              <option value="maximum">Maximum available</option>
-            </select>
-            <p class="section-help" id="resolution-help">Select a source to calculate output dimensions.</p>
-          </div>
         </section>
 
         <section class="settings-section" id="treatment-card" aria-labelledby="treatment-heading">
@@ -110,38 +117,38 @@
           <div class="field">
             <label for="notes">Additional instructions <span class="optional">Optional</span></label>
             <textarea id="notes" name="notes" rows="2" maxlength="500" placeholder="E.g. keep small lettering crisp and preserve the thread colors." aria-describedby="notes-count"></textarea>
-            <div class="field-footer"><span>Fine-tune the details.</span><span id="notes-count">0 / 500</span></div>
+            <div class="field-footer"><span id="notes-count">0 / 500</span></div>
           </div>
           <details class="prompt-disclosure">
             <summary>View embroidery instructions</summary>
-            <p class="section-help">Instructions for Generate preview, including output mode and your notes. Product + solo uses its two named modes.</p>
+            <p class="section-help">Instructions for Generate preview, including output mode and your notes.</p>
             <pre id="managed-prompt" class="prompt-text"></pre>
           </details>
         </section>
 
       </div>
 
-      <div class="output-naming" aria-label="Output filename">
-        <div class="field">
-          <label for="output-name">Name</label>
-          <input type="text" id="output-name" placeholder="Name" autocomplete="off" spellcheck="false" required aria-describedby="output-filename">
+      <div class="fixed-controls">
+        <div class="output-naming" aria-label="Output filename">
+          <div class="field">
+            <label for="output-name">Name</label>
+            <input type="text" id="output-name" placeholder="Name" autocomplete="off" spellcheck="false" required aria-describedby="output-filename">
+          </div>
+          <div class="field">
+            <label for="output-number">Number</label>
+            <input type="text" id="output-number" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off" spellcheck="false" aria-describedby="output-filename">
+          </div>
         </div>
-        <div class="field">
-          <label for="output-number">Number</label>
-          <input type="text" id="output-number" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off" spellcheck="false" aria-describedby="output-filename">
-        </div>
+        <section class="generate-dock" aria-label="Generation actions">
+          <button type="button" class="button button--primary" id="generate-button" disabled aria-describedby="generation-help"><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m13 3 1.9 6.1L21 11l-6.1 1.9L13 19l-1.9-6.1L5 11l6.1-1.9L13 3ZM5 3v4M3 5h4M20 17v4M18 19h4" /></svg>Generate preview</button>
+          <button type="button" class="button button--secondary" id="cancel-generation" hidden>Stop waiting</button>
+          <p id="generation-help" role="status">Select a mockup to generate one preview.</p>
+        </section>
       </div>
-      <section class="generate-dock" aria-label="Generation actions">
-        <button type="button" class="button button--primary" id="generate-button" disabled aria-describedby="generation-help"><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m13 3 1.9 6.1L21 11l-6.1 1.9L13 19l-1.9-6.1L5 11l6.1-1.9L13 3ZM5 3v4M3 5h4M20 17v4M18 19h4" /></svg>Generate preview</button>
-        <button type="button" class="button button--secondary" id="cancel-generation" hidden>Stop waiting</button>
-        <p id="generation-help" role="status">Select a mockup to generate one preview.</p>
-        <button type="button" class="button button--secondary button--paired" id="generate-pair-button" disabled aria-describedby="pair-generation-help"><span>Generate product + solo</span><span class="button-count">2 images</span></button>
-        <p id="pair-generation-help" role="status">Two paid requests · Product at selected resolution + Solo at maximum</p>
-      </section>
     </aside>
 
     <section class="output-panel" aria-labelledby="preview-heading">
-      <div class="output-toolbar" aria-label="Model settings">
+      <div class="output-toolbar" aria-label="Model, effort and resolution">
         <div class="toolbar-field model-field">
           <label for="model-select">Model <span>OpenAI</span></label>
           <select id="model-select">
@@ -160,6 +167,16 @@
             <option value="max" disabled>Max · 2.5</option>
           </select>
         </div>
+        <div class="toolbar-field resolution-field">
+          <label for="output-size">Resolution</label>
+          <select id="output-size" aria-describedby="resolution-help">
+            <option value="source">Match source</option>
+            <option value="1k" selected>1K</option>
+            <option value="2k">2K</option>
+            <option value="maximum">Maximum available</option>
+          </select>
+        </div>
+        <p class="section-help resolution-help" id="resolution-help" hidden></p>
         <button type="button" id="remember-settings" class="button button--remember" disabled><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4h12v17l-6-4-6 4V4Z" /></svg>Remember these settings</button>
         <button type="button" class="button button--disconnect" id="disconnect-button">Disconnect</button>
       </div>
@@ -185,6 +202,7 @@
         </div>
 
         <div class="canvas-footer"><span id="canvas-description" aria-live="polite">Artwork fills the canvas · Transparent PNG</span><span id="canvas-source">No mockup selected</span></div>
+        <dl class="result-stats" id="result-stats" aria-label="Render stats" hidden></dl>
         <div class="result-status" id="result-status" hidden><p id="result-warning" role="status"></p><button type="button" class="text-button" id="retry-save" hidden>Retry local save</button></div>
       </div>
 
@@ -204,6 +222,7 @@
     <dialog class="history-dialog" id="history-dialog" aria-labelledby="history-heading" aria-describedby="history-scope">
       <div class="history-dialog-heading"><h2 id="history-heading">Local history</h2><button type="button" class="history-close" id="history-close" aria-label="Close history settings" autofocus><svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
       <p class="history-summary" id="history-summary">Reading storage…</p>
+      <div class="history-export"><button type="button" class="button button--secondary" id="history-export-stats" aria-describedby="history-export-help" disabled>Export stats</button><p id="history-export-help">JSON · All saved renders</p></div>
       <p class="history-scope" id="history-scope">Delete saved images from this browser. Downloads and settings are unaffected.</p>
       <form id="history-form" novalidate>
         <fieldset id="history-options">
@@ -227,6 +246,6 @@
   </main>
 
   <!-- Browser-only workspace. Credentials stay in the connection gate's memory. -->
-  <script type="module" src="js/ui-preview.js?v=20260924-clipboard"></script>
+  <script type="module" src="js/ui-preview.js?v=20260924-stats"></script>
 </body>
 </html>

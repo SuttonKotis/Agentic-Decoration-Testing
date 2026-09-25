@@ -1,7 +1,8 @@
 import {
   deleteHistoryEntries, formatHistoryMegabytes, HISTORY_MAX_BYTES, HistoryStorageError,
   isHistoryTimestamp, listHistory, planHistoryDeletion, subscribeToHistory, summarizeHistory,
-} from './history-store.js?v=20260924-hardening';
+} from './history-store.js?v=20260924-stats';
+import { createStatsExport } from './render-stats.js?v=20260924-stats';
 
 export function mountHistoryControls() {
   const byId = (id) => document.getElementById(id);
@@ -13,6 +14,7 @@ export function mountHistoryControls() {
   const days = byId('history-days');
   const older = byId('history-older');
   const remove = byId('history-delete');
+  const exportStats = byId('history-export-stats');
   const error = byId('history-error');
   const status = byId('history-status');
   byId('history-limit').textContent = (HISTORY_MAX_BYTES / 1_000_000).toLocaleString('en-US') + ' MB';
@@ -37,6 +39,7 @@ export function mountHistoryControls() {
     byId('history-close').disabled = busy;
     byId('history-cancel').disabled = busy;
     byId('history-retry').disabled = busy || loading;
+    exportStats.disabled = busy || loading || !available || entries.length === 0;
     form.setAttribute('aria-busy', String(busy || loading));
     if (busy) return;
     if (loading || !available) {
@@ -110,6 +113,26 @@ export function mountHistoryControls() {
     error.textContent = '';
     dialog.showModal();
     void refresh();
+  });
+
+  exportStats.addEventListener('click', () => {
+    if (!dialog.open || workspace.hidden || busy || loading || !available || !entries.length) return;
+    let url;
+    const link = document.createElement('a');
+    try {
+      const report = createStatsExport(entries);
+      url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2) + '\n'], { type: 'application/json' }));
+      link.href = url;
+      link.download = 'decoration-render-stats-' + report.exportedAt.replace(/[:.]/g, '-') + '.json';
+      dialog.append(link);
+      link.click();
+      status.textContent = 'Exported stats for ' + imageCount(report.renders.length) + '.';
+    } catch {
+      error.textContent = 'Stats could not be exported. Try again.';
+    } finally {
+      link.remove();
+      if (url) setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
   });
 
   form.addEventListener('submit', async (event) => {

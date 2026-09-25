@@ -1,6 +1,6 @@
-import { normalizeSettings, outputMode } from './settings.js?v=20260923-naming';
-import { buildPrompt } from './prompt.js?v=embroidery-20260923-3';
-import { planOutput } from './size.js';
+import { normalizeSettings, outputMode } from './settings.js?v=20260924-sizing';
+import { buildPrompt } from './prompt.js?v=20260924-sizing';
+import { planOutput } from './size.js?v=20260924-sizing';
 
 /** Preflight every output before any paid request; overrides never alter preferences. */
 export function planGeneration(source, rawSettings, paired = false) {

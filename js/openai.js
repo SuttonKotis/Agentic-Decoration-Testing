@@ -8,8 +8,8 @@
 
 import { OUTPUT, PROVIDER, TIMING } from './config.js';
 import { redactSecrets } from './validation.js';
-import { MODELS, effortsForModel } from './settings.js';
-import { isSupportedSize } from './size.js';
+import { MODELS, effortsForModel } from './settings.js?v=20260924-sizing';
+import { isSupportedSize } from './size.js?v=20260924-sizing';
 import { decodeBoundedBase64, readBoundedText, readImageDimensions, RESOURCE_LIMITS, ResourceLimitError } from './resource-limits.js';
 
 /**

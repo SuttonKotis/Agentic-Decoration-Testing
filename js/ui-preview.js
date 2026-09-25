@@ -3,18 +3,20 @@
  * memory-only credentials (owned by the gate), and local result history.
  */
 import { NOTES, TIMING, UPLOAD } from './config.js';
-import { mountAccessGate } from './access-gate.js?v=20260924-clipboard';
-import { mountHistoryControls } from './history-controls.js?v=20260924-hardening';
-import { mountHistoryGallery } from './history-gallery.js?v=20260924-hardening';
-import { buildPrompt } from './prompt.js?v=embroidery-20260923-3';
-import { makeAbortReason, ProviderError } from './openai.js?v=20260924-hardening';
+import { mountAccessGate } from './access-gate.js?v=20260924-auto-connect';
+import { mountHistoryControls } from './history-controls.js?v=20260924-stats';
+import { mountHistoryGallery } from './history-gallery.js?v=20260924-stats';
+import { getRenderStats } from './render-stats.js?v=20260924-stats';
+import { buildPrompt } from './prompt.js?v=20260924-sizing';
+import { makeAbortReason, ProviderError } from './openai.js?v=20260924-sizing';
 import { formatBytes, validateImageFile } from './validation.js';
-import { DEFAULT_SETTINGS, effortsForModel, loadSettings, normalizeSettings, outputMode, rememberSettings } from './settings.js?v=20260923-naming';
-import { planOutput } from './size.js';
-import { planGeneration } from './generation-plan.js?v=20260923-naming';
+import { DEFAULT_SETTINGS, effortsForModel, loadSettings, normalizeSettings, outputMode, rememberSettings } from './settings.js?v=20260924-sizing';
+import { planOutput } from './size.js?v=20260924-sizing';
+import { planGeneration } from './generation-plan.js?v=20260924-sizing';
 import { outputFilename, prepareOutput } from './image-output.js?v=20260924-hardening';
 import { digitsOnly, namedOutputFilename, namingError, historyOutputName } from './output-naming.js?v=20260923-optional-number';
 import { assertImageDimensions, inspectImageBlob, RESOURCE_LIMITS, ResourceLimitError } from './resource-limits.js';
+import { validateEmbroiderySize } from './embroidery-size.js?v=20260924-sizing';
 
 const byId = (id) => document.getElementById(id);
 const model = byId('model-select');
@@ -22,6 +24,8 @@ const effort = byId('effort-select');
 const transparency = byId('transparency-output');
 const framing = byId('framing-field');
 const resolution = byId('output-size');
+const designWidth = byId('design-width');
+const designHeight = byId('design-height');
 const fileInput = byId('source-file');
 const sourceImage = byId('source-image');
 const notes = byId('notes');
@@ -77,6 +81,7 @@ function readSettings() {
     decorationType: byId('decoration-type').value, model: model.value, effort: effort.value,
     transparency: transparency.checked, framing: framing.querySelector('input:checked').value,
     resolution: resolution.value, notes: notes.value,
+    designWidthInches: designWidth.value, designHeightInches: designHeight.value,
     outputName: outputName.value, outputNumber: outputNumber.value,
   });
 }
@@ -87,6 +92,8 @@ function applySettings(settings) {
   transparency.checked = settings.transparency;
   for (const input of framing.querySelectorAll('input')) input.checked = input.value === settings.framing;
   resolution.value = settings.resolution;
+  designWidth.value = settings.designWidthInches;
+  designHeight.value = settings.designHeightInches;
   notes.value = settings.notes;
   outputName.value = settings.outputName;
   outputNumber.value = settings.outputNumber;
@@ -119,13 +126,37 @@ function renderCanvas() {
   byId('pending-indicator').hidden = !job;
   byId('download-result').disabled = !result;
   byId('download-result').title = result ? 'Download ' + historyOutputName(result) : 'Generate or select an output to download.';
+  const statsPanel = byId('result-stats');
+  statsPanel.hidden = !result;
+  statsPanel.replaceChildren();
   if (result) {
     const dimensions = details.width && details.height ? details.width + ' × ' + details.height + ' px · ' : '';
-    byId('canvas-description').textContent = dimensions + (settings.model || 'Unknown model') + ' · ' + (settings.effort || 'Unknown effort') + ' · ' +
+    byId('canvas-description').textContent = dimensions +
       (result.saveState === 'saved' ? 'Saved locally' : result.saveState === 'saving' ? 'Saving locally…' : 'Not saved');
     if (details.pairId) byId('canvas-description').textContent += ' · Pair ' + details.pairId.slice(0, 6);
     byId('canvas-source').textContent = historyOutputName(result);
     byId('canvas-source').title = 'Source: ' + result.sourceName;
+    const stats = getRenderStats(result);
+    const design = stats.size.embroideryInches;
+    const requested = stats.size.requestedPixels;
+    const fields = [
+      ['Source image', stats.sourceFilename || 'Not recorded'],
+      ['Model', [...model.options].find((option) => option.value === stats.model)?.textContent || stats.model || 'Not recorded'],
+      ['Effort', ({ low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' })[stats.effort] || stats.effort || 'Not recorded'],
+      ['Resolution', [...resolution.options].find((option) => option.value === stats.size.resolution)?.textContent || stats.size.resolution || 'Not recorded'],
+      ['Embroidery size', design ? design.width + 'W × ' + design.height + 'H in' : 'Not supplied'],
+      ['Render size', requested ? requested.width + ' × ' + requested.height + ' px' : 'Not recorded'],
+      ['Time to generate', stats.timeToGenerateSeconds === null ? 'Not recorded' : stats.timeToGenerateSeconds.toFixed(1) + ' s'],
+    ];
+    for (const [label, value] of fields) {
+      const field = document.createElement('div');
+      const term = document.createElement('dt');
+      const description = document.createElement('dd');
+      term.textContent = label;
+      description.textContent = value;
+      field.append(term, description);
+      statsPanel.append(field);
+    }
     const warnings = [...(details.warnings || [])];
     if (result.saveState === 'unsaved') warnings.push(result.saveError + ' Download before refreshing or disconnecting.');
     byId('result-warning').textContent = warnings.join(' ');
@@ -146,6 +177,15 @@ function renderControls() {
   updateNavigationGuard();
   const settings = readSettings();
   const nameError = namingError(settings);
+  const designSize = validateEmbroiderySize(settings);
+  byId('design-size-error').textContent = designSize.error;
+  for (const [key, input] of [['designWidthInches', designWidth], ['designHeightInches', designHeight]]) {
+    input.required = Boolean(settings.designWidthInches || settings.designHeightInches);
+    const invalid = designSize.invalidFields.includes(key);
+    input.setCustomValidity(invalid ? designSize.error : '');
+    if (invalid) input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+  }
   const filename = namedOutputFilename(settings, { preview: true });
   byId('output-filename').textContent = filename;
   byId('output-filename').title = filename;
@@ -157,10 +197,10 @@ function renderControls() {
       ? 'Fill the output with embroidery while preserving its proportions.'
       : 'Export on the source canvas. Check artwork alignment before use.';
   byId('notes-count').textContent = notes.value.length + ' / ' + NOTES.maxLength;
-  byId('managed-prompt').textContent = buildPrompt(settings.notes, settings).text;
+  byId('managed-prompt').textContent = designSize.error || buildPrompt(settings.notes, settings).text;
   let validPlan = false;
   let planError = '';
-  let sizeText = 'Select a source to calculate output dimensions.';
+  let sizeText = '';
   if (source) {
     try {
       const plan = planOutput(source.width, source.height, settings);
@@ -172,43 +212,22 @@ function renderControls() {
     } catch (error) { planError = error.message; sizeText = planError; }
   }
   byId('resolution-help').textContent = sizeText;
+  byId('resolution-help').hidden = !sizeText;
   const unavailableReason = !connected ? 'Connect before generating a preview.'
     : job ? (job.paired ? 'Paired run' : 'One request') + ' in progress. Changed settings apply to the next run.'
       : sourceLoading ? 'Reading the selected image…'
-        : byId('source-file-error').textContent || (!source ? 'Select a mockup to generate one preview.' : nameError);
+        : byId('source-file-error').textContent || (!source ? 'Select a mockup to generate one preview.' : nameError || designSize.error);
   const blockedReason = unavailableReason || planError;
   const ready = !unavailableReason && validPlan;
   byId('generate-button').disabled = !ready;
   byId('generate-button').title = ready ? 'Generate one image using the selected model and parameters.' : blockedReason;
-  byId('remember-settings').disabled = !connected;
+  byId('remember-settings').disabled = !connected || Boolean(designSize.error);
   byId('cancel-generation').hidden = !job;
   byId('cancel-generation').disabled = Boolean(job?.stopRequested);
   byId('cancel-generation').textContent = job?.paired ? 'Stop remaining outputs' : 'Stop waiting';
   byId('generation-help').textContent = ready
     ? 'Ready · One paid request · No automatic retries'
     : blockedReason;
-  let pairError = '';
-  let pairPlans;
-  if (source) {
-    try { pairPlans = planGeneration(source, settings, true); }
-    catch (error) { pairError = error.message; }
-  }
-  const pairReady = !unavailableReason && Boolean(pairPlans);
-  const pairReason = unavailableReason || pairError;
-  const pairButton = byId('generate-pair-button');
-  pairButton.disabled = !pairReady;
-  pairButton.title = pairReady
-    ? 'Two sequential paid requests from the same original source. Each output is attempted once; completed images are kept if the other fails. Preferences stay unchanged.'
-    : pairReason;
-  const resolutionLabel = resolution.selectedOptions[0].textContent;
-  byId('pair-generation-help').textContent = pairReady
-    ? 'Two paid requests · Product: ' + resolutionLabel + ' · Solo: maximum (experimental)'
-    : pairReason;
-  // Shared connection/loading reasons are already shown above; keep only
-  // pair-specific validation or the two-request cost beneath this button.
-  byId('pair-generation-help').hidden = Boolean(unavailableReason);
-  if (pairReady) pairButton.title += pairPlans.map(({ label, plan }) =>
-    ' ' + label + ': render ' + plan.width + ' × ' + plan.height + ', export ' + plan.exportWidth + ' × ' + plan.exportHeight + ' px.').join('');
   renderCanvas();
 }
 
@@ -309,6 +328,12 @@ async function generate(paired = false) {
   const settings = readSettings();
   const nameError = namingError(settings);
   if (nameError) { showError('Name the output', nameError); return; }
+  const designSize = validateEmbroiderySize(settings);
+  if (designSize.error) {
+    showError('Check embroidery size', designSize.error);
+    (designSize.invalidFields[0] === 'designWidthInches' ? designWidth : designHeight).focus();
+    return;
+  }
   const filename = namedOutputFilename(settings);
   let outputs;
   try { outputs = planGeneration(submittedSource, settings, paired); }
@@ -347,11 +372,13 @@ async function generate(paired = false) {
       tick();
       renderControls();
       try {
+        const requestStartedAt = performance.now();
         const response = await gate.requestPreview({
           file: submittedSource.file, prompt: prompt.text, size: plan.size,
           model: settings.model, quality: settings.effort, transparency: settings.transparency,
           signal: current.aborter.signal,
         });
+        const timeToGenerateSeconds = Math.round((performance.now() - requestStartedAt) / 100) / 10;
         if (!connected || job !== current) return;
         // The provider has finished. A slow local export must not discard it.
         clearTimeout(current.deadline);
@@ -379,7 +406,7 @@ async function generate(paired = false) {
           id, createdAt, image: prepared.blob, sourceImage: submittedSource.file,
           sourceName: submittedSource.file.name, parameters: settings,
           details: {
-            filename,
+            filename, timeToGenerateSeconds,
             promptVersion: prompt.version, requestId: response.requestId, requestedSize: plan.size,
             sourceWidth: submittedSource.width, sourceHeight: submittedSource.height,
             width: prepared.width, height: prepared.height, hasTransparency: prepared.hasTransparency,
@@ -418,7 +445,6 @@ async function generate(paired = false) {
 }
 
 byId('generate-button').addEventListener('click', () => { void generate(); });
-byId('generate-pair-button').addEventListener('click', () => { void generate(true); });
 byId('cancel-generation').addEventListener('click', () => {
   if (job?.received && job.keepOriginal) {
     job.stopRequested = true;
@@ -446,6 +472,7 @@ byId('download-result').addEventListener('click', () => {
   link.remove();
 });
 byId('remember-settings').addEventListener('click', () => {
+  if (validateEmbroiderySize(readSettings()).error) return;
   try {
     rememberSettings(readSettings());
     notify('Settings remembered in this browser, including additional instructions and output naming. Login name and API key are not saved.');
@@ -456,6 +483,8 @@ for (const control of [effort, transparency, framing, resolution, byId('decorati
   control.addEventListener('change', renderControls);
 }
 notes.addEventListener('input', renderControls);
+designWidth.addEventListener('input', renderControls);
+designHeight.addEventListener('input', renderControls);
 outputName.addEventListener('input', renderControls);
 outputNumber.addEventListener('input', () => {
   // A text input with a numeric keyboard preserves leading zeroes and avoids

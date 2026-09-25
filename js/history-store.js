@@ -85,7 +85,7 @@ export function createHistoryRecord({ id = globalThis.crypto.randomUUID(), creat
 function safeHistoryFields(parameters, details) {
   const safeParameters = {};
   // Never spread application/session state into a persistent record.
-  for (const key of ['decorationType', 'model', 'effort', 'framing', 'resolution', 'notes', 'outputName', 'outputNumber']) {
+  for (const key of ['decorationType', 'model', 'effort', 'framing', 'resolution', 'notes', 'outputName', 'outputNumber', 'designWidthInches', 'designHeightInches']) {
     if (typeof parameters?.[key] === 'string') safeParameters[key] = parameters[key];
   }
   if (typeof parameters?.transparency === 'boolean') safeParameters.transparency = parameters.transparency;
@@ -96,6 +96,9 @@ function safeHistoryFields(parameters, details) {
   }
   for (const key of ['sourceWidth', 'sourceHeight', 'width', 'height', 'inputTokens', 'outputTokens', 'totalTokens']) {
     if (Number.isSafeInteger(details?.[key]) && details[key] >= 0) safeDetails[key] = details[key];
+  }
+  if (Number.isFinite(details?.timeToGenerateSeconds) && details.timeToGenerateSeconds >= 0) {
+    safeDetails.timeToGenerateSeconds = details.timeToGenerateSeconds;
   }
   if (typeof details?.hasTransparency === 'boolean') safeDetails.hasTransparency = details.hasTransparency;
   if (safeDetails.pairId && ['product', 'solo'].includes(details?.pairRole)) safeDetails.pairRole = details.pairRole;

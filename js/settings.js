@@ -5,7 +5,8 @@ export const SETTINGS_KEY = 'decoration-preview-settings:' + new URL('../', impo
 export const MODELS = Object.freeze(['gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']);
 export const DEFAULT_SETTINGS = Object.freeze({
   decorationType: 'embroidery', model: 'gpt-image-2', effort: 'high',
-  transparency: true, framing: 'solo', resolution: '2k', notes: '',
+  transparency: true, framing: 'solo', resolution: '1k', notes: '',
+  designWidthInches: '', designHeightInches: '',
   outputName: '', outputNumber: '',
 });
 
@@ -21,7 +22,10 @@ export function normalizeSettings(raw = {}) {
   if (effortsForModel(settings.model).includes(raw.effort)) settings.effort = raw.effort;
   if (typeof raw.transparency === 'boolean') settings.transparency = raw.transparency;
   if (['solo', 'at-size'].includes(raw.framing)) settings.framing = raw.framing;
-  if (['source', '2k', 'maximum'].includes(raw.resolution)) settings.resolution = raw.resolution;
+  if (['source', '1k', '2k', 'maximum'].includes(raw.resolution)) settings.resolution = raw.resolution;
+  for (const key of ['designWidthInches', 'designHeightInches']) {
+    if (typeof raw[key] === 'string') settings[key] = raw[key].trim();
+  }
   if (typeof raw.notes === 'string') settings.notes = raw.notes.slice(0, NOTES.maxLength);
   if (typeof raw.outputName === 'string') settings.outputName = raw.outputName;
   if (typeof raw.outputNumber === 'string') settings.outputNumber = digitsOnly(raw.outputNumber);

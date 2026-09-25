@@ -4,7 +4,7 @@
  * here; no credential is returned, persisted, or placed in a DOM/input value.
  */
 import { TIMING } from './config.js';
-import { checkProviderAccess, makeAbortReason, requestEmbroideryPreview } from './openai.js?v=20260924-hardening';
+import { checkProviderAccess, makeAbortReason, requestEmbroideryPreview } from './openai.js?v=20260924-sizing';
 import { validateApiKey, validateName } from './validation.js';
 
 export function mountAccessGate({ onConnect = () => {}, onDisconnect = () => {} } = {}) {
@@ -91,7 +91,8 @@ export function mountAccessGate({ onConnect = () => {}, onDisconnect = () => {} 
     if (checked.ok) loadedKey = checked.value;
     renderControls();
     if (!checked.ok) showKeyError(checked.message);
-    else (validateName(nameInput.value).ok ? connectButton : nameInput).focus();
+    else if (validateName(nameInput.value).ok) form.requestSubmit(connectButton);
+    else nameInput.focus();
   }
 
   async function pasteFromClipboard() {
